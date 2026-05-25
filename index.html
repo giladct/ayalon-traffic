@@ -1,0 +1,870 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ayalon Traffic</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="data.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 13px;
+    background: #f0f2f5;
+    color: #333;
+  }
+
+  header {
+    background: #1a2e4a;
+    color: #fff;
+    padding: 14px 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  header h1 { font-size: 18px; font-weight: 600; }
+  header .meta { font-size: 12px; opacity: .6; margin-top: 2px; }
+  header a { color: #7dd3fc; text-decoration: none; font-size: 12px; white-space: nowrap; }
+  header a:hover { text-decoration: underline; }
+
+  /* ── Filter bar ── */
+  .filter-bar {
+    background: #fff;
+    border-bottom: 1px solid #dde1e7;
+    padding: 10px 20px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    align-items: center;
+  }
+  .filter-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .filter-label {
+    font-size: 11px;
+    font-weight: 700;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: .4px;
+    white-space: nowrap;
+  }
+  .pill-group { display: flex; flex-wrap: wrap; gap: 5px; }
+  .pill {
+    padding: 4px 10px;
+    border-radius: 20px;
+    border: 1px solid #d1d5db;
+    background: #f9fafb;
+    color: #555;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all .15s;
+    white-space: nowrap;
+  }
+  .pill:hover { border-color: #93c5fd; background: #eff6ff; }
+  .pill.active { background: #1a2e4a; color: #fff; border-color: #1a2e4a; }
+  .pill.point-pill.active {
+    color: #fff;
+    border-color: transparent;
+  }
+
+  /* ── Stats ── */
+  .stats-row {
+    display: flex;
+    gap: 12px;
+    padding: 14px 20px;
+    background: #fff;
+    border-bottom: 1px solid #dde1e7;
+    overflow-x: auto;
+  }
+  .stat-card {
+    flex: 1;
+    min-width: 120px;
+    background: #f8f9fb;
+    border: 1px solid #dde1e7;
+    border-radius: 6px;
+    padding: 12px 16px;
+  }
+  .stat-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: .4px;
+    margin-bottom: 4px;
+  }
+  .stat-value { font-size: 22px; font-weight: 700; color: #1a2e4a; }
+  .stat-sub { font-size: 11px; color: #888; margin-top: 2px; }
+
+  .section { padding: 16px 20px; }
+  .section-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: #444;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+    margin-bottom: 12px;
+  }
+
+  /* ── Current conditions ── */
+  .waypoints-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 10px;
+    margin-bottom: 20px;
+  }
+  .wp-card {
+    background: #fff;
+    border: 1px solid #dde1e7;
+    border-left: 4px solid #ccc;
+    border-radius: 6px;
+    padding: 12px 14px;
+  }
+  .wp-card.free   { border-left-color: #22c55e; }
+  .wp-card.light  { border-left-color: #86efac; }
+  .wp-card.medium { border-left-color: #fbbf24; }
+  .wp-card.heavy  { border-left-color: #f97316; }
+  .wp-card.severe { border-left-color: #ef4444; }
+  .wp-card.closed { border-left-color: #7f1d1d; background: #fef2f2; }
+
+  .wp-name { font-weight: 600; font-size: 13px; margin-bottom: 6px; }
+  .wp-speed { font-size: 22px; font-weight: 700; }
+  .wp-speed span { font-size: 12px; font-weight: 400; color: #888; }
+  .wp-ratio { font-size: 12px; color: #666; margin-top: 3px; }
+  .wp-closed-badge {
+    display: inline-block;
+    background: #ef4444;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 3px;
+    margin-top: 4px;
+  }
+
+  /* ── Charts ── */
+  .charts-row {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+  }
+  @media (max-width: 800px) { .charts-row { grid-template-columns: 1fr; } }
+
+  .chart-box {
+    background: #fff;
+    border: 1px solid #dde1e7;
+    border-radius: 8px;
+    padding: 16px;
+  }
+  .chart-box canvas { max-height: 280px; }
+
+  /* ── Data table ── */
+  .table-controls {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .table-search {
+    padding: 5px 10px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 12px;
+    width: 200px;
+    outline: none;
+  }
+  .table-search:focus { border-color: #3b82f6; }
+  .table-pagination {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: #555;
+  }
+  .page-btn {
+    padding: 4px 10px;
+    border: 1px solid #d1d5db;
+    border-radius: 5px;
+    background: #f9fafb;
+    cursor: pointer;
+    font-size: 12px;
+  }
+  .page-btn:hover:not(:disabled) { background: #eff6ff; border-color: #93c5fd; }
+  .page-btn:disabled { opacity: .4; cursor: default; }
+  .table-wrap { overflow-x: auto; }
+  table.data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+  table.data-table th {
+    background: #f8f9fb;
+    border: 1px solid #e5e7eb;
+    padding: 7px 10px;
+    text-align: left;
+    font-weight: 600;
+    color: #555;
+    white-space: nowrap;
+    cursor: pointer;
+    user-select: none;
+  }
+  table.data-table th:hover { background: #eff6ff; }
+  table.data-table th .sort-arrow { margin-left: 4px; opacity: .4; }
+  table.data-table th.sorted .sort-arrow { opacity: 1; }
+  table.data-table td {
+    border: 1px solid #e5e7eb;
+    padding: 6px 10px;
+    white-space: nowrap;
+  }
+  table.data-table tr:nth-child(even) td { background: #fafafa; }
+  table.data-table tr:hover td { background: #eff6ff; }
+  .badge {
+    display: inline-block;
+    padding: 2px 7px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .badge.free   { background: #dcfce7; color: #166534; }
+  .badge.light  { background: #bbf7d0; color: #14532d; }
+  .badge.medium { background: #fef9c3; color: #713f12; }
+  .badge.heavy  { background: #ffedd5; color: #7c2d12; }
+  .badge.severe { background: #fee2e2; color: #7f1d1d; }
+  .badge.closed { background: #7f1d1d; color: #fff; }
+
+  /* ── Heatmap ── */
+  .heatmap-wrap { overflow-x: auto; }
+  table.heatmap {
+    border-collapse: collapse;
+    font-size: 11px;
+    white-space: nowrap;
+  }
+  table.heatmap th, table.heatmap td {
+    padding: 4px 6px;
+    text-align: center;
+    border: 1px solid #e5e7eb;
+  }
+  table.heatmap th { background: #f8f9fb; font-weight: 600; color: #555; }
+  .hm-cell { width: 34px; height: 24px; }
+
+  footer {
+    text-align: center;
+    font-size: 11px;
+    color: #aaa;
+    padding: 16px;
+  }
+  footer a { color: #93c5fd; text-decoration: none; }
+  footer a:hover { text-decoration: underline; }
+
+  .date-input {
+    padding: 4px 8px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 12px;
+    color: #333;
+    outline: none;
+  }
+  .date-input:focus { border-color: #3b82f6; }
+
+  /* ── Map ── */
+  #map {
+    height: 400px;
+    border-radius: 8px;
+    border: 1px solid #dde1e7;
+    margin-bottom: 16px;
+  }
+  .map-marker-label {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>Ayalon Highway — Traffic Monitor</h1>
+    <div class="meta" id="generated-at"></div>
+  </div>
+  <a href="https://developer.tomtom.com/traffic-api/documentation/traffic-flow/flow-segment-data"
+     target="_blank" rel="noopener">TomTom Traffic Flow API ↗</a>
+</header>
+
+<!-- ── Filter bar ── -->
+<div class="filter-bar">
+  <div class="filter-group">
+    <span class="filter-label">Date Range</span>
+    <input type="date" id="filter-from" class="date-input">
+    <span style="color:#aaa;font-size:12px">–</span>
+    <input type="date" id="filter-to" class="date-input">
+  </div>
+  <div class="filter-group">
+    <span class="filter-label">Points</span>
+    <div class="pill-group" id="filter-points"></div>
+  </div>
+</div>
+
+<div class="stats-row" id="stats-row"></div>
+
+<div class="section">
+  <div class="section-title">Current Conditions</div>
+  <div class="waypoints-grid" id="waypoints-grid"></div>
+
+  <div class="section-title" style="margin-top:20px">Map</div>
+  <div id="map"></div>
+  <div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:16px;font-size:11px;align-items:center;">
+    <span style="font-weight:600;color:#666">Legend:</span>
+    <span style="display:flex;align-items:center;gap:4px"><span style="width:12px;height:12px;border-radius:50%;background:#22c55e;display:inline-block"></span>Free</span>
+    <span style="display:flex;align-items:center;gap:4px"><span style="width:12px;height:12px;border-radius:50%;background:#86efac;display:inline-block"></span>Light</span>
+    <span style="display:flex;align-items:center;gap:4px"><span style="width:12px;height:12px;border-radius:50%;background:#fbbf24;display:inline-block"></span>Moderate</span>
+    <span style="display:flex;align-items:center;gap:4px"><span style="width:12px;height:12px;border-radius:50%;background:#f97316;display:inline-block"></span>Heavy</span>
+    <span style="display:flex;align-items:center;gap:4px"><span style="width:12px;height:12px;border-radius:50%;background:#ef4444;display:inline-block"></span>Severe</span>
+    <span style="display:flex;align-items:center;gap:4px"><span style="width:12px;height:12px;border-radius:50%;background:#7f1d1d;display:inline-block"></span>Closed</span>
+  </div>
+
+  <div class="charts-row">
+    <div class="chart-box">
+      <div class="section-title" style="margin-bottom:12px">Congestion Over Time</div>
+      <canvas id="chart-24h"></canvas>
+    </div>
+    <div class="chart-box">
+      <div class="section-title">Avg km/h by Hour of Day</div>
+      <canvas id="chart-hourly"></canvas>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title">Heatmap — Hour vs Day</div>
+  <div class="heatmap-wrap">
+    <table class="heatmap" id="heatmap"></table>
+  </div>
+</div>
+
+<div class="section">
+  <div class="table-controls">
+    <div class="section-title" style="margin-bottom:0">Raw Data</div>
+    <input class="table-search" id="table-search" placeholder="Search point or status…" />
+    <div class="table-pagination">
+      <button class="page-btn" id="page-prev">&#8592;</button>
+      <span id="page-info"></span>
+      <button class="page-btn" id="page-next">&#8594;</button>
+      <span id="table-count" style="color:#aaa"></span>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th data-col="fetched_at">Time (Israel) <span class="sort-arrow">↕</span></th>
+          <th data-col="point_id">Point <span class="sort-arrow">↕</span></th>
+          <th data-col="current_speed">Speed <span class="sort-arrow">↕</span></th>
+          <th data-col="free_flow_speed">Free Flow <span class="sort-arrow">↕</span></th>
+          <th data-col="congestion_ratio">Flow % <span class="sort-arrow">↕</span></th>
+          <th data-col="hour_local">Hour <span class="sort-arrow">↕</span></th>
+          <th data-col="day_of_week">Day <span class="sort-arrow">↕</span></th>
+          <th data-col="road_closure">Status <span class="sort-arrow">↕</span></th>
+        </tr>
+      </thead>
+      <tbody id="table-body"></tbody>
+    </table>
+  </div>
+</div>
+
+<footer>
+  Ayalon Traffic Monitor &nbsp;·&nbsp;
+  Source: <a href="https://developer.tomtom.com/traffic-api/documentation/traffic-flow/flow-segment-data"
+             target="_blank" rel="noopener">TomTom Traffic Flow API</a>
+  &nbsp;·&nbsp; <span id="footer-ts"></span>
+</footer>
+
+<script>
+const data      = AYALON_DATA;
+const readings  = data.readings;
+const waypoints = data.waypoints;
+const wpMap     = Object.fromEntries(waypoints.map(w => [w.id, w]));
+
+const DAYS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+
+const POINT_COLORS = [
+  "#3b82f6","#10b981","#f59e0b","#ef4444","#8b5cf6","#06b6d4","#f97316"
+];
+
+document.getElementById("generated-at").textContent = "Generated: " + data.generated_at;
+document.getElementById("footer-ts").textContent = data.generated_at;
+
+// ── Filter state ─────────────────────────────────────────────────────────────
+
+function isoDateStr(d) { return d.toISOString().slice(0, 10); }
+
+const state = {
+  dateFrom: isoDateStr(new Date(Date.now() - 7 * 86400000)),
+  dateTo:   isoDateStr(new Date()),
+  points:   new Set(waypoints.map(w => w.id)),
+};
+
+function filteredReadings() {
+  const from = state.dateFrom;
+  const to   = state.dateTo + "T23:59:59";
+  return readings.filter(r => r.fetched_at >= from && r.fetched_at <= to);
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function congClass(ratio) {
+  if (ratio == null) return "";
+  if (ratio >= 0.90) return "free";
+  if (ratio >= 0.70) return "light";
+  if (ratio >= 0.50) return "medium";
+  if (ratio >= 0.30) return "heavy";
+  return "severe";
+}
+
+function heatColor(ratio) {
+  if (ratio == null) return "#f3f4f6";
+  const pct = Math.min(1, Math.max(0, ratio));
+  const red   = Math.round(255 * (1 - pct));
+  const green = Math.round(200 * pct);
+  return `rgb(${red},${green},80)`;
+}
+
+function avg(arr) {
+  return arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null;
+}
+
+// Convert UTC ISO string → Israel local time string
+// Uses "sv" locale which returns "YYYY-MM-DD HH:MM:SS" in local tz (reliable cross-browser)
+function fmtIsrael(utcStr, mode) {
+  // Python isoformat() emits "+00:00"; only append Z if no tz offset present
+  const hasTz = utcStr.endsWith("Z") || /[+-]\d{2}:\d{2}$/.test(utcStr);
+  const d = new Date(hasTz ? utcStr : utcStr + "Z");
+  const p = Object.fromEntries(
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Jerusalem",
+      year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+    }).formatToParts(d).map(x => [x.type, x.value])
+  );
+  if (mode === "time")     return `${p.hour}:${p.minute}`;
+  if (mode === "short")    return `${p.month}-${p.day} ${p.hour}`;
+  if (mode === "datetime") return `${p.month}-${p.day} ${p.hour}:${p.minute}`;
+  return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}`;
+}
+
+// ── Waypoint filter pills (built once) ───────────────────────────────────────
+
+const pillsEl = document.getElementById("filter-points");
+waypoints.forEach((wp, i) => {
+  const btn = document.createElement("button");
+  btn.className = "pill point-pill active";
+  btn.dataset.id = wp.id;
+  btn.textContent = wp.name;
+  btn.style.background = POINT_COLORS[i % POINT_COLORS.length];
+  btn.style.borderColor = POINT_COLORS[i % POINT_COLORS.length];
+  btn.style.color = "#fff";
+  btn.addEventListener("click", () => {
+    if (state.points.has(wp.id)) {
+      if (state.points.size === 1) return; // keep at least one
+      state.points.delete(wp.id);
+      btn.classList.remove("active");
+      btn.style.background = "";
+      btn.style.borderColor = "";
+      btn.style.color = "";
+    } else {
+      state.points.add(wp.id);
+      btn.classList.add("active");
+      btn.style.background = POINT_COLORS[i % POINT_COLORS.length];
+      btn.style.borderColor = POINT_COLORS[i % POINT_COLORS.length];
+      btn.style.color = "#fff";
+    }
+    render();
+  });
+  pillsEl.appendChild(btn);
+});
+
+// ── Date range inputs ─────────────────────────────────────────────────────────
+
+document.getElementById("filter-from").value = state.dateFrom;
+document.getElementById("filter-to").value   = state.dateTo;
+
+document.getElementById("filter-from").addEventListener("change", e => {
+  state.dateFrom = e.target.value;
+  render();
+});
+document.getElementById("filter-to").addEventListener("change", e => {
+  state.dateTo = e.target.value;
+  render();
+});
+
+// ── Charts (created once, data updated on render) ────────────────────────────
+
+const chart24h = new Chart(document.getElementById("chart-24h"), {
+  type: "line",
+  data: { labels: [], datasets: [] },
+  options: {
+    plugins: { legend: { position: "bottom", labels: { boxWidth: 10, font: { size: 11 } } } },
+    scales: {
+      y: {
+        min: 0,
+        title: { display: true, text: "Speed (km/h)" },
+        ticks: { callback: v => v + " km/h" },
+      },
+      x: { ticks: { maxTicksLimit: 24 } },
+    },
+    interaction: { mode: "index", intersect: false },
+    animation: false,
+  },
+});
+
+const LABELS_15 = [];
+for (let h = 0; h < 24; h++)
+  for (let m = 0; m < 60; m += 15)
+    LABELS_15.push(`${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`);
+
+const chartHourly = new Chart(document.getElementById("chart-hourly"), {
+  type: "line",
+  data: { labels: LABELS_15, datasets: [] },
+  options: {
+    plugins: { legend: { position: "bottom", labels: { boxWidth: 10, font: { size: 11 } } } },
+    scales: {
+      y: { min: 0, ticks: { callback: v => v + " km/h" } },
+      x: { ticks: { maxTicksLimit: 24 } },
+    },
+    interaction: { mode: "index", intersect: false },
+    animation: false,
+  },
+});
+
+// ── Data table ───────────────────────────────────────────────────────────────
+
+const PAGE_SIZE = 100;
+const tableState = { page: 0, sort: "fetched_at", dir: -1, search: "" };
+
+document.getElementById("table-search").addEventListener("input", e => {
+  tableState.search = e.target.value.toLowerCase();
+  tableState.page = 0;
+  renderTable();
+});
+document.getElementById("page-prev").addEventListener("click", () => { tableState.page--; renderTable(); });
+document.getElementById("page-next").addEventListener("click", () => { tableState.page++; renderTable(); });
+
+document.querySelector("table.data-table thead").addEventListener("click", e => {
+  const th = e.target.closest("th[data-col]");
+  if (!th) return;
+  const col = th.dataset.col;
+  if (tableState.sort === col) tableState.dir *= -1;
+  else { tableState.sort = col; tableState.dir = -1; }
+  tableState.page = 0;
+  renderTable();
+});
+
+function renderTable() {
+  const fr = filteredReadings().filter(r => state.points.has(r.point_id));
+
+  const q = tableState.search;
+  const searched = q
+    ? fr.filter(r =>
+        (wpMap[r.point_id]?.name ?? r.point_id).toLowerCase().includes(q) ||
+        r.fetched_at.includes(q) ||
+        (r.road_closure ? "closed" : congClass(r.congestion_ratio)).includes(q)
+      )
+    : fr;
+
+  const col = tableState.sort;
+  const dir = tableState.dir;
+  const sorted = [...searched].sort((a, b) => {
+    const av = a[col] ?? "", bv = b[col] ?? "";
+    return av < bv ? -dir : av > bv ? dir : 0;
+  });
+
+  // Update sort arrows
+  document.querySelectorAll("table.data-table th").forEach(th => {
+    th.classList.remove("sorted");
+    const arrow = th.querySelector(".sort-arrow");
+    if (th.dataset.col === col) {
+      th.classList.add("sorted");
+      arrow.textContent = dir === -1 ? "↓" : "↑";
+    } else {
+      arrow.textContent = "↕";
+    }
+  });
+
+  const total = sorted.length;
+  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  tableState.page = Math.min(tableState.page, pages - 1);
+  const start = tableState.page * PAGE_SIZE;
+  const page  = sorted.slice(start, start + PAGE_SIZE);
+
+  document.getElementById("page-info").textContent =
+    `Page ${tableState.page + 1} / ${pages}`;
+  document.getElementById("table-count").textContent =
+    `${total.toLocaleString()} rows`;
+  document.getElementById("page-prev").disabled = tableState.page === 0;
+  document.getElementById("page-next").disabled = tableState.page >= pages - 1;
+
+  const tbody = document.getElementById("table-body");
+  tbody.innerHTML = page.map(r => {
+    const cls    = r.road_closure ? "closed" : congClass(r.congestion_ratio);
+    const label  = r.road_closure ? "Closed"
+                 : cls === "free"   ? "Free"
+                 : cls === "light"  ? "Light"
+                 : cls === "medium" ? "Moderate"
+                 : cls === "heavy"  ? "Heavy"
+                 : "Severe";
+    const pct    = r.congestion_ratio != null ? Math.round(r.congestion_ratio * 100) + "%" : "–";
+    const ts     = fmtIsrael(r.fetched_at, "full");
+    return `<tr>
+      <td>${ts}</td>
+      <td>${wpMap[r.point_id]?.name ?? r.point_id}</td>
+      <td>${r.current_speed != null ? Math.round(r.current_speed) + " km/h" : "–"}</td>
+      <td>${r.free_flow_speed != null ? Math.round(r.free_flow_speed) + " km/h" : "–"}</td>
+      <td>${pct}</td>
+      <td>${String(r.hour_local ?? "").padStart(2,"0")}:00</td>
+      <td>${DAYS[r.day_of_week] ?? "–"}</td>
+      <td><span class="badge ${cls}">${label}</span></td>
+    </tr>`;
+  }).join("");
+}
+
+function render() {
+  const fr = filteredReadings();
+
+  // Stats
+  const uniqueDays  = new Set(fr.map(r => r.fetched_at.slice(0, 10))).size;
+  const ratioVals   = fr.map(r => r.congestion_ratio).filter(v => v != null);
+  const avgRatio    = avg(ratioVals);
+  const closures    = fr.filter(r => r.road_closure).length;
+  const worstPoint  = (() => {
+    const byPoint = {};
+    for (const r of fr) {
+      if (r.congestion_ratio == null) continue;
+      if (!byPoint[r.point_id]) byPoint[r.point_id] = [];
+      byPoint[r.point_id].push(r.congestion_ratio);
+    }
+    let worst = null, worstAvg = 2;
+    for (const [id, vals] of Object.entries(byPoint)) {
+      const a = avg(vals);
+      if (a < worstAvg) { worstAvg = a; worst = id; }
+    }
+    return worst ? `${wpMap[worst]?.name} (${Math.round(worstAvg * 100)}%)` : "–";
+  })();
+
+  document.getElementById("stats-row").innerHTML = `
+    <div class="stat-card">
+      <div class="stat-label">Readings</div>
+      <div class="stat-value">${fr.length.toLocaleString()}</div>
+      <div class="stat-sub">${uniqueDays} days · ${waypoints.length} points</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Avg Flow</div>
+      <div class="stat-value">${avgRatio != null ? Math.round(avgRatio * 100) + "%" : "–"}</div>
+      <div class="stat-sub">of free-flow speed</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Worst Point</div>
+      <div class="stat-value" style="font-size:15px">${worstPoint}</div>
+      <div class="stat-sub">lowest avg flow</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Closures</div>
+      <div class="stat-value">${closures}</div>
+      <div class="stat-sub">road closure events</div>
+    </div>
+  `;
+
+  // Current conditions — latest reading within date range
+  const latest = {};
+  for (const r of fr) {
+    if (!latest[r.point_id] || r.fetched_at > latest[r.point_id].fetched_at)
+      latest[r.point_id] = r;
+  }
+
+  // Update map markers (function defined later in same script block)
+  updateMap(latest);
+
+  const gridEl = document.getElementById("waypoints-grid");
+  gridEl.innerHTML = "";
+  for (const wp of waypoints) {
+    const r   = latest[wp.id];
+    const cls = r ? (r.road_closure ? "closed" : congClass(r.congestion_ratio)) : "";
+    const pct = r?.congestion_ratio != null ? Math.round(r.congestion_ratio * 100) : "–";
+    const card = document.createElement("div");
+    card.className = `wp-card ${cls}`;
+    card.innerHTML = `
+      <div class="wp-name">${wp.name}</div>
+      ${r ? `
+        <div class="wp-speed">${Math.round(r.current_speed ?? 0)} <span>/ ${Math.round(r.free_flow_speed ?? 0)} km/h</span></div>
+        <div class="wp-ratio">Flow: ${pct}% of free-flow</div>
+        ${r.road_closure ? '<div class="wp-closed-badge">CLOSED</div>' : ''}
+      ` : '<div class="wp-ratio">No data</div>'}
+    `;
+    gridEl.appendChild(card);
+  }
+
+  // Time-series chart — 15-min buckets, uses date-range filter + point toggle
+  const spanDays = Math.max(1,
+    (new Date(state.dateTo) - new Date(state.dateFrom)) / 86400000 + 1
+  );
+  const bucketMap = {};
+  for (const r of fr) {
+    if (!state.points.has(r.point_id)) continue;
+    const ts = r.fetched_at.slice(0, 16); // "YYYY-MM-DDTHH:MM"
+    if (!bucketMap[ts]) bucketMap[ts] = {};
+    if (!bucketMap[ts][r.point_id]) bucketMap[ts][r.point_id] = [];
+    if (r.current_speed != null) bucketMap[ts][r.point_id].push(r.current_speed);
+  }
+  const times = Object.keys(bucketMap).sort();
+  chart24h.data.labels = times.map(t =>
+    spanDays <= 1 ? fmtIsrael(t, "time") : fmtIsrael(t, "datetime")
+  );
+  chart24h.data.datasets = waypoints
+    .filter(wp => state.points.has(wp.id))
+    .map((wp, i) => {
+      const ci = waypoints.indexOf(wp);
+      return {
+        label: wp.name,
+        data: times.map(t => {
+          const vals = bucketMap[t]?.[wp.id];
+          return vals?.length ? avg(vals) : null;
+        }),
+        borderColor: POINT_COLORS[ci % POINT_COLORS.length],
+        backgroundColor: "transparent",
+        tension: 0.3,
+        pointRadius: 2,
+        spanGaps: true,
+      };
+    });
+  chart24h.update();
+
+  // Hourly line chart — one line per weekday, uses filtered readings
+  const DAY_COLORS = ["#3b82f6","#10b981","#8b5cf6","#f59e0b","#f97316","#ef4444","#06b6d4"];
+  const hourlyByDay = Array.from({length: 7}, () => ({}));
+  for (const r of fr) {
+    if (r.current_speed == null || !state.points.has(r.point_id)) continue;
+    const d   = r.day_of_week;
+    const min = parseInt(r.fetched_at.slice(14, 16), 10);
+    const slot = r.hour_local * 4 + Math.floor(min / 15);
+    if (!hourlyByDay[d][slot]) hourlyByDay[d][slot] = [];
+    hourlyByDay[d][slot].push(r.current_speed);
+  }
+  chartHourly.data.datasets = DAYS.map((name, d) => ({
+    label: name,
+    data: Array.from({length: 96}, (_, s) => avg(hourlyByDay[d][s] || [])),
+    borderColor: DAY_COLORS[d],
+    backgroundColor: "transparent",
+    tension: 0.3,
+    pointRadius: 2,
+    spanGaps: true,
+  }));
+  chartHourly.update();
+
+  // Heatmap — uses filtered readings
+  const hmData = {};
+  for (const r of fr) {
+    if (r.congestion_ratio == null) continue;
+    const key = `${r.day_of_week}_${r.hour_local}`;
+    if (!hmData[key]) hmData[key] = [];
+    hmData[key].push(r.congestion_ratio);
+  }
+  let html = "<thead><tr><th>Hour</th>";
+  for (const d of DAYS) html += `<th>${d}</th>`;
+  html += "</tr></thead><tbody>";
+  for (let h = 0; h < 24; h++) {
+    html += `<tr><td><strong>${String(h).padStart(2,"0")}:00</strong></td>`;
+    for (let d = 0; d < 7; d++) {
+      const vals = hmData[`${d}_${h}`] || [];
+      const a    = avg(vals);
+      const txt  = a != null ? Math.round(a * 100) + "%" : "";
+      html += `<td class="hm-cell" style="background:${heatColor(a)}" title="${DAYS[d]} ${h}:00 — ${txt || "no data"}">${txt}</td>`;
+    }
+    html += "</tr>";
+  }
+  html += "</tbody>";
+  document.getElementById("heatmap").innerHTML = html;
+
+  renderTable();
+}
+
+// ── Map ──────────────────────────────────────────────────────────────────────
+
+const map = L.map("map").setView([32.09, 34.79], 12);
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+  maxZoom: 18,
+}).addTo(map);
+
+const CONG_COLORS = {
+  free:   "#22c55e",
+  light:  "#86efac",
+  medium: "#fbbf24",
+  heavy:  "#f97316",
+  severe: "#ef4444",
+  closed: "#7f1d1d",
+  "":     "#94a3b8",
+};
+
+const mapMarkers = {};
+
+function makeMarkerIcon(color, label) {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="42" viewBox="0 0 32 42">
+    <path d="M16 0C7.163 0 0 7.163 0 16c0 11 16 26 16 26S32 27 32 16C32 7.163 24.837 0 16 0z"
+          fill="${color}" stroke="#fff" stroke-width="2"/>
+    <text x="16" y="20" text-anchor="middle" font-size="12" font-weight="bold"
+          font-family="sans-serif" fill="#fff">${label}</text>
+  </svg>`;
+  return L.divIcon({
+    html: svg,
+    className: "map-marker-label",
+    iconSize:   [32, 42],
+    iconAnchor: [16, 42],
+    popupAnchor:[0, -42],
+  });
+}
+
+waypoints.forEach((wp, i) => {
+  const label = String.fromCharCode(65 + i); // A, B, C...
+  const marker = L.marker([wp.lat, wp.lon], { icon: makeMarkerIcon("#94a3b8", label) })
+    .addTo(map);
+  marker._ayalonLabel = label;
+  mapMarkers[wp.id] = marker;
+});
+
+function updateMap(latestReadings) {
+  waypoints.forEach(wp => {
+    const r   = latestReadings[wp.id];
+    const cls = r ? (r.road_closure ? "closed" : congClass(r.congestion_ratio)) : "";
+    const color = CONG_COLORS[cls] ?? "#94a3b8";
+    mapMarkers[wp.id].setIcon(makeMarkerIcon(color, mapMarkers[wp.id]._ayalonLabel));
+
+    const speed = r?.current_speed != null ? Math.round(r.current_speed) + " km/h" : "–";
+    const ff    = r?.free_flow_speed != null ? Math.round(r.free_flow_speed) + " km/h" : "–";
+    const pct   = r?.congestion_ratio != null ? Math.round(r.congestion_ratio * 100) + "%" : "–";
+    const label = r?.road_closure ? "🚫 Closed"
+                : cls === "free"   ? "✅ Free"
+                : cls === "light"  ? "🟢 Light"
+                : cls === "medium" ? "🟡 Moderate"
+                : cls === "heavy"  ? "🟠 Heavy"
+                : cls === "severe" ? "🔴 Severe"
+                : "⚪ No data";
+    mapMarkers[wp.id].bindPopup(
+      `<strong>${wp.name}</strong><br>` +
+      `${label}<br>` +
+      `Speed: ${speed} / ${ff}<br>` +
+      `Flow: ${pct} of free-flow<br>` +
+      `<small style="color:#888">${wp.lat.toFixed(4)}, ${wp.lon.toFixed(4)}</small>`
+    );
+  });
+}
+
+render();
+</script>
+</body>
+</html>

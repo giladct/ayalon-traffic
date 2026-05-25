@@ -774,12 +774,12 @@ function render() {
     if (!hmData[key]) hmData[key] = [];
     hmData[key].push(r.congestion_ratio);
   }
-  let html = "<thead><tr><th>Hour</th>";
-  for (const d of DAYS) html += `<th>${d}</th>`;
+  let html = "<thead><tr><th>Day</th>";
+  for (let h = 0; h < 24; h++) html += `<th>${String(h).padStart(2,"0")}</th>`;
   html += "</tr></thead><tbody>";
-  for (let h = 0; h < 24; h++) {
-    html += `<tr><td><strong>${String(h).padStart(2,"0")}:00</strong></td>`;
-    for (let d = 0; d < 7; d++) {
+  for (let d = 0; d < 7; d++) {
+    html += `<tr><td><strong>${DAYS[d]}</strong></td>`;
+    for (let h = 0; h < 24; h++) {
       const vals = hmData[`${d}_${h}`] || [];
       const a    = avg(vals);
       const txt  = a != null ? Math.round(a * 100) + "%" : "";
